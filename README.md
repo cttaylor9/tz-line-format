@@ -60,8 +60,11 @@ so one typo on line 200 doesn't hide problems on line 5.
 
 ## Building
 
-There's no build step wired up yet — `tsconfig.json` is there for when a
-TypeScript compiler is installed locally.
+```
+npm install
+npm run build   # compiles src/ to dist/ via tsc
+npm test        # runs test/normalize.test.ts with Node's built-in TS stripping
+```
 
 ## License
 

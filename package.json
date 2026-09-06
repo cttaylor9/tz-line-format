@@ -5,11 +5,15 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test test/normalize.test.ts"
   },
   "files": [
     "dist"
   ],
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
   "license": "MIT",
   "author": "cttaylor9"
 }
