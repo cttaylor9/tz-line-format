@@ -4,9 +4,12 @@
   "description": "Normalizes messy timezone-aware timestamps into canonical ISO 8601 strings, one per line.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "tz-line-format": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-strip-types --test test/normalize.test.ts"
+    "test": "node --experimental-strip-types --test test/normalize.test.ts test/cli.test.ts"
   },
   "files": [
     "dist"

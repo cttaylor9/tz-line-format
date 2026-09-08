@@ -58,6 +58,20 @@ so one typo on line 200 doesn't hide problems on line 5.
 - No support yet for relative expressions ("3pm PST + 5 hours").
 - Years must be exactly 4 digits.
 
+## CLI
+
+`src/cli.ts` reads a block of text from stdin, one timestamp per line, and
+writes normalized ISO lines to stdout in input order. Lines that fail to
+parse write a rendered `TimezoneFormatError` to stderr instead and cause the
+process to exit non-zero, but they don't stop the rest of the lines from
+being processed.
+
+```
+npm run build
+echo '2024-3-1 9:30am EST' | node dist/cli.js
+# 2024-03-01T09:30:00-05:00
+```
+
 ## Building
 
 ```
