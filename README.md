@@ -44,17 +44,23 @@ so one typo on line 200 doesn't hide problems on line 5.
 
 - Dates: `YYYY-M-D` or `YYYY/M/D`, with or without leading zeros.
 - Times: `H:MM` or `H:MM:SS`, 24-hour, or 12-hour with `am`/`pm`/`a.m.`/`p.m.`.
-- Zones: `Z`, an explicit offset (`+05:30`, `-0800`), or a fixed-offset
-  abbreviation (`UTC`, `EST`, `PDT`, `JST`, `IST`, `CET`, and a handful of
-  others — see `ZONE_OFFSETS` in `src/normalize.ts`).
+- Zones: `Z`, an explicit offset (`+05:30`, `-0800`), a fixed-offset
+  abbreviation (`UTC`, `GMT`, `IST`, `JST`), or a daylight-saving-aware
+  abbreviation (`EST`/`EDT`, `CST`/`CDT`, `MST`/`MDT`, `PST`/`PDT`,
+  `CET`/`CEST`, `AEST`/`AEDT`) — see `ZONE_FIXED_OFFSETS` and
+  `ZONE_DST_REGIONS` in `src/normalize.ts`. The DST-aware ones are resolved
+  against the real IANA tz database rules for that region and date (via
+  `Intl`, which Node ships with), so `EST` in July on the US east coast
+  correctly comes out as `-04:00` because daylight time was actually in
+  effect, not `-05:00` from a fixed table.
 - Flexible whitespace and an optional comma between the date and time
   segments.
 
 ## Known limitations
 
-- Zone abbreviations map to fixed offsets, not real IANA rules — there's no
-  historical DST calculation, and some abbreviations (`CST`, for instance)
-  are genuinely ambiguous depending on the country.
+- Abbreviations like `CST` are genuinely ambiguous depending on the country
+  (US Central, Cuba Standard, China Standard...); this library always picks
+  one meaning and doesn't yet let you disambiguate by region.
 - No support yet for relative expressions ("3pm PST + 5 hours").
 - Years must be exactly 4 digits.
 

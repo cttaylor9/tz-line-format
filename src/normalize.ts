@@ -11,26 +11,80 @@ export interface NormalizeResult {
   errors: TimezoneFormatError[]
 }
 
-// Fixed offsets only, no daylight-saving rule engine yet. EST/EDT etc are the
-// US meanings; abbreviations like CST are genuinely ambiguous worldwide, but
-// picking one consistently beats refusing to parse anything at all.
-const ZONE_OFFSETS: Record<string, number> = {
+// Zones that don't observe daylight saving get a fixed offset. Abbreviations
+// like CST are genuinely ambiguous worldwide, but picking one meaning
+// consistently beats refusing to parse anything at all.
+const ZONE_FIXED_OFFSETS: Record<string, number> = {
   UTC: 0,
   GMT: 0,
-  EST: -5 * 60,
-  EDT: -4 * 60,
-  CST: -6 * 60,
-  CDT: -5 * 60,
-  MST: -7 * 60,
-  MDT: -6 * 60,
-  PST: -8 * 60,
-  PDT: -7 * 60,
   IST: 5 * 60 + 30,
   JST: 9 * 60,
-  CET: 1 * 60,
-  CEST: 2 * 60,
-  AEST: 10 * 60,
-  AEDT: 11 * 60,
+}
+
+// Zones that do observe daylight saving are resolved against the real IANA
+// tz database (via Intl, which Node ships with) rather than a fixed number,
+// so the standard/daylight offset actually matches the calendar date. Both
+// abbreviations in a pair map to the same region: whichever one the input
+// uses, the region's real rules decide the offset for that specific date.
+const ZONE_DST_REGIONS: Record<string, string> = {
+  EST: 'America/New_York',
+  EDT: 'America/New_York',
+  CST: 'America/Chicago',
+  CDT: 'America/Chicago',
+  MST: 'America/Denver',
+  MDT: 'America/Denver',
+  PST: 'America/Los_Angeles',
+  PDT: 'America/Los_Angeles',
+  CET: 'Europe/Paris',
+  CEST: 'Europe/Paris',
+  AEST: 'Australia/Sydney',
+  AEDT: 'Australia/Sydney',
+}
+
+const KNOWN_ZONE_ABBREVIATIONS = [...Object.keys(ZONE_FIXED_OFFSETS), ...Object.keys(ZONE_DST_REGIONS)]
+
+/** Offset in minutes (east of UTC) that `zone` was actually observing at `instant`. */
+function offsetMinutesAt(zone: string, instant: Date): number {
+  const parts: Record<string, number> = {}
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  for (const part of formatter.formatToParts(instant)) {
+    if (part.type !== 'literal') parts[part.type] = Number(part.value)
+  }
+  // setUTCFullYear/setUTCHours (unlike the Date constructor or Date.UTC)
+  // don't special-case two-digit years, so a 4-digit year is read literally.
+  const asUtc = new Date(0)
+  asUtc.setUTCFullYear(parts.year, parts.month - 1, parts.day)
+  asUtc.setUTCHours(parts.hour, parts.minute, parts.second, 0)
+  return Math.round((asUtc.getTime() - instant.getTime()) / 60000)
+}
+
+/**
+ * Resolves a wall-clock date/time meant to be read in `zone` to a UTC offset.
+ * The offset itself depends on which instant is in effect (DST or not), so
+ * this guesses an instant assuming today's offset, reads the real offset at
+ * that instant, and re-resolves against it. One pass is enough except within
+ * a couple of hours of a transition, which is a fixed point in practice.
+ */
+function resolveZoneOffsetMinutes(
+  zone: string,
+  year: number, month: number, day: number,
+  hour: number, minute: number, second: number,
+): number {
+  const guess = new Date(0)
+  guess.setUTCFullYear(year, month - 1, day)
+  guess.setUTCHours(hour, minute, second, 0)
+  const firstPass = offsetMinutesAt(zone, guess)
+  const refined = new Date(guess.getTime() - firstPass * 60000)
+  return offsetMinutesAt(zone, refined)
 }
 
 const MONTH_NAMES = [
@@ -185,11 +239,13 @@ function parseLine(rawLine: string, lineNumber: number): NormalizedEntry {
     const wordMatch = scanner.match(/[A-Za-z]+/y)
     if (!wordMatch) fail(zoneStart, 'expected a time zone abbreviation or offset')
     const key = wordMatch[0].toUpperCase()
-    const known = ZONE_OFFSETS[key]
-    if (known === undefined) {
-      fail(zoneStart, `unrecognized time zone "${wordMatch[0]}" (known: ${Object.keys(ZONE_OFFSETS).join(', ')})`)
+    if (key in ZONE_FIXED_OFFSETS) {
+      offsetMinutes = ZONE_FIXED_OFFSETS[key]
+    } else if (key in ZONE_DST_REGIONS) {
+      offsetMinutes = resolveZoneOffsetMinutes(ZONE_DST_REGIONS[key], year, month, day, hour, minute, second)
+    } else {
+      fail(zoneStart, `unrecognized time zone "${wordMatch[0]}" (known: ${KNOWN_ZONE_ABBREVIATIONS.join(', ')})`)
     }
-    offsetMinutes = known
   }
 
   scanner.skipSpaces()

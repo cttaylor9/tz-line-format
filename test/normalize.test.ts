@@ -200,6 +200,30 @@ test('explicit offset with out-of-range minutes', () => {
   assert.match(err.message, /offset \+05:60 is out of range/)
 })
 
+// --- DST-aware zone abbreviations ---
+
+test('EST resolves to standard time in winter', () => {
+  assert.equal(isoOf('2024-01-15 09:00 EST'), '2024-01-15T09:00:00-05:00')
+})
+
+test('EST resolves to daylight time in summer, since it names the region not the exact label', () => {
+  assert.equal(isoOf('2024-07-01 09:00 EST'), '2024-07-01T09:00:00-04:00')
+})
+
+test('EDT and EST agree once resolved against the actual date', () => {
+  assert.equal(isoOf('2024-07-01 09:00 EDT'), isoOf('2024-07-01 09:00 EST'))
+})
+
+test('CET is standard time in winter and daylight time in summer', () => {
+  assert.equal(isoOf('2024-01-01 12:00 CET'), '2024-01-01T12:00:00+01:00')
+  assert.equal(isoOf('2024-07-01 12:00 CET'), '2024-07-01T12:00:00+02:00')
+})
+
+test('AEST/AEDT follow the southern hemisphere DST calendar, reversed from the north', () => {
+  assert.equal(isoOf('2024-01-15 09:00 AEST'), '2024-01-15T09:00:00+11:00')
+  assert.equal(isoOf('2024-07-15 09:00 AEDT'), '2024-07-15T09:00:00+10:00')
+})
+
 test('unrecognized zone abbreviation', () => {
   const err = errorOf('2024-03-01 09:00 XYZ')
   assert.match(err.message, /unrecognized time zone "XYZ"/)
