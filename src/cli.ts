@@ -1,6 +1,19 @@
 #!/usr/bin/env node
-import { normalizeTimezoneText } from './normalize'
+import { normalizeTimezoneText, AmbiguousZoneRegion } from './normalize'
 import { TimezoneFormatError } from './errors'
+
+const SUPPORTED_REGIONS: AmbiguousZoneRegion[] = ['US', 'CN', 'CU']
+
+/** Reads `--region=XX` off argv, for disambiguating zone abbreviations like CST. */
+function parseRegionFlag(argv: string[]): AmbiguousZoneRegion | undefined {
+  const flag = argv.find((arg) => arg.startsWith('--region='))
+  if (!flag) return undefined
+  const value = flag.slice('--region='.length).toUpperCase()
+  if (!SUPPORTED_REGIONS.includes(value as AmbiguousZoneRegion)) {
+    throw new Error(`unknown --region "${value}" (supported: ${SUPPORTED_REGIONS.join(', ')})`)
+  }
+  return value as AmbiguousZoneRegion
+}
 
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -12,8 +25,9 @@ function readStdin(): Promise<string> {
 }
 
 async function main(): Promise<void> {
+  const region = parseRegionFlag(process.argv.slice(2))
   const input = await readStdin()
-  const { entries, errors } = normalizeTimezoneText(input)
+  const { entries, errors } = normalizeTimezoneText(input, { region })
 
   // Entries and errors come back as separate arrays; interleave them by line
   // number so output order matches the order lines appeared in the input.

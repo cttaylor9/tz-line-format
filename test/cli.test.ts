@@ -5,8 +5,8 @@ import path from 'node:path'
 
 const cliPath = path.join(__dirname, '../src/cli.ts')
 
-function runCli(input: string): { stdout: string; stderr: string; status: number | null } {
-  const result = spawnSync(process.execPath, ['--experimental-strip-types', cliPath], {
+function runCli(input: string, args: string[] = []): { stdout: string; stderr: string; status: number | null } {
+  const result = spawnSync(process.execPath, ['--experimental-strip-types', cliPath, ...args], {
     input,
     encoding: 'utf8',
   })
@@ -39,4 +39,18 @@ test('blank input produces no output and exits zero', () => {
   assert.equal(stdout, '')
   assert.equal(stderr, '')
   assert.equal(status, 0)
+})
+
+test('--region flag disambiguates CST to the given region', () => {
+  const { stdout, stderr, status } = runCli('2024-01-15 09:00 CST\n', ['--region=CN'])
+  assert.equal(stdout, '2024-01-15T09:00:00+08:00\n')
+  assert.equal(stderr, '')
+  assert.equal(status, 0)
+})
+
+test('unknown --region value is rejected before reading stdin', () => {
+  const { stdout, stderr, status } = runCli('2024-01-15 09:00 CST\n', ['--region=FR'])
+  assert.equal(stdout, '')
+  assert.match(stderr, /unknown --region "FR" \(supported: US, CN, CU\)/)
+  assert.equal(status, 1)
 })

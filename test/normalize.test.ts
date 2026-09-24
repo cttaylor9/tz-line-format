@@ -1,17 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeTimezoneText } from '../src/normalize'
+import { normalizeTimezoneText, NormalizeOptions } from '../src/normalize'
 import { TimezoneFormatError } from '../src/errors'
 
-function isoOf(input: string): string {
-  const result = normalizeTimezoneText(input)
+function isoOf(input: string, options?: NormalizeOptions): string {
+  const result = normalizeTimezoneText(input, options)
   assert.equal(result.errors.length, 0, `expected no errors, got: ${result.errors.map(e => e.message).join('; ')}`)
   assert.equal(result.entries.length, 1)
   return result.entries[0].iso
 }
 
-function errorOf(input: string): TimezoneFormatError {
-  const result = normalizeTimezoneText(input)
+function errorOf(input: string, options?: NormalizeOptions): TimezoneFormatError {
+  const result = normalizeTimezoneText(input, options)
   assert.equal(result.entries.length, 0, `expected no entries, got: ${JSON.stringify(result.entries)}`)
   assert.equal(result.errors.length, 1)
   return result.errors[0]
@@ -222,6 +222,30 @@ test('CET is standard time in winter and daylight time in summer', () => {
 test('AEST/AEDT follow the southern hemisphere DST calendar, reversed from the north', () => {
   assert.equal(isoOf('2024-01-15 09:00 AEST'), '2024-01-15T09:00:00+11:00')
   assert.equal(isoOf('2024-07-15 09:00 AEDT'), '2024-07-15T09:00:00+10:00')
+})
+
+// --- ambiguous zone abbreviations resolved by region flag ---
+
+test('CST defaults to US Central when no region is given', () => {
+  assert.equal(isoOf('2024-01-15 09:00 CST'), '2024-01-15T09:00:00-06:00')
+})
+
+test('CST with region US is explicit US Central', () => {
+  assert.equal(isoOf('2024-01-15 09:00 CST', { region: 'US' }), '2024-01-15T09:00:00-06:00')
+})
+
+test('CST with region CN is China Standard Time, fixed at +08:00 year round', () => {
+  assert.equal(isoOf('2024-01-15 09:00 CST', { region: 'CN' }), '2024-01-15T09:00:00+08:00')
+  assert.equal(isoOf('2024-07-15 09:00 CST', { region: 'CN' }), '2024-07-15T09:00:00+08:00')
+})
+
+test('CST with region CU is Cuba Standard Time', () => {
+  assert.equal(isoOf('2024-01-15 09:00 CST', { region: 'CU' }), '2024-01-15T09:00:00-05:00')
+})
+
+test('CDT is not used in China, and fails with a message naming the supported regions', () => {
+  const err = errorOf('2024-01-15 09:00 CDT', { region: 'CN' })
+  assert.match(err.message, /"CDT" is not used in region "CN" \(supported regions for CDT: US, CU\)/)
 })
 
 test('unrecognized zone abbreviation', () => {

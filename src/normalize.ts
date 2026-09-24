@@ -11,9 +11,22 @@ export interface NormalizeResult {
   errors: TimezoneFormatError[]
 }
 
-// Zones that don't observe daylight saving get a fixed offset. Abbreviations
-// like CST are genuinely ambiguous worldwide, but picking one meaning
-// consistently beats refusing to parse anything at all.
+/** Region flag for abbreviations that name more than one real-world zone (see AMBIGUOUS_ZONE_REGIONS). */
+export type AmbiguousZoneRegion = 'US' | 'CN' | 'CU'
+
+export interface NormalizeOptions {
+  /**
+   * Which real zone an ambiguous abbreviation like CST refers to. Defaults
+   * to 'US' (Central Time) to match this library's historical behavior.
+   */
+  region?: AmbiguousZoneRegion
+}
+
+const DEFAULT_REGION: AmbiguousZoneRegion = 'US'
+
+// Zones that don't observe daylight saving get a fixed offset. Some of these
+// abbreviations are also ambiguous in principle (IST is India/Israel/Ireland)
+// but only one meaning is common enough in practice to be worth supporting.
 const ZONE_FIXED_OFFSETS: Record<string, number> = {
   UTC: 0,
   GMT: 0,
@@ -29,8 +42,6 @@ const ZONE_FIXED_OFFSETS: Record<string, number> = {
 const ZONE_DST_REGIONS: Record<string, string> = {
   EST: 'America/New_York',
   EDT: 'America/New_York',
-  CST: 'America/Chicago',
-  CDT: 'America/Chicago',
   MST: 'America/Denver',
   MDT: 'America/Denver',
   PST: 'America/Los_Angeles',
@@ -41,7 +52,20 @@ const ZONE_DST_REGIONS: Record<string, string> = {
   AEDT: 'Australia/Sydney',
 }
 
-const KNOWN_ZONE_ABBREVIATIONS = [...Object.keys(ZONE_FIXED_OFFSETS), ...Object.keys(ZONE_DST_REGIONS)]
+// CST/CDT genuinely name different real-world zones depending on the country:
+// US Central, China Standard (no DST, so no "CDT" there), and Cuba Standard.
+// Which one an input meant can't be guessed from the text alone, so it's
+// resolved by the caller's region flag instead of picking one silently.
+const AMBIGUOUS_ZONE_REGIONS: Record<string, Partial<Record<AmbiguousZoneRegion, string>>> = {
+  CST: { US: 'America/Chicago', CN: 'Asia/Shanghai', CU: 'America/Havana' },
+  CDT: { US: 'America/Chicago', CU: 'America/Havana' },
+}
+
+const KNOWN_ZONE_ABBREVIATIONS = [
+  ...Object.keys(ZONE_FIXED_OFFSETS),
+  ...Object.keys(ZONE_DST_REGIONS),
+  ...Object.keys(AMBIGUOUS_ZONE_REGIONS),
+]
 
 /** Offset in minutes (east of UTC) that `zone` was actually observing at `instant`. */
 function offsetMinutesAt(zone: string, instant: Date): number {
@@ -147,7 +171,7 @@ class LineScanner {
   }
 }
 
-function parseLine(rawLine: string, lineNumber: number): NormalizedEntry {
+function parseLine(rawLine: string, lineNumber: number, options: NormalizeOptions): NormalizedEntry {
   const scanner = new LineScanner(rawLine)
   const fail = (column: number, message: string): never => {
     throw new TimezoneFormatError(message, { line: lineNumber, column }, rawLine)
@@ -243,6 +267,14 @@ function parseLine(rawLine: string, lineNumber: number): NormalizedEntry {
       offsetMinutes = ZONE_FIXED_OFFSETS[key]
     } else if (key in ZONE_DST_REGIONS) {
       offsetMinutes = resolveZoneOffsetMinutes(ZONE_DST_REGIONS[key], year, month, day, hour, minute, second)
+    } else if (key in AMBIGUOUS_ZONE_REGIONS) {
+      const region = options.region ?? DEFAULT_REGION
+      const zone = AMBIGUOUS_ZONE_REGIONS[key][region]
+      if (!zone) {
+        const supported = Object.keys(AMBIGUOUS_ZONE_REGIONS[key]).join(', ')
+        fail(zoneStart, `"${wordMatch[0]}" is not used in region "${region}" (supported regions for ${key}: ${supported})`)
+      }
+      offsetMinutes = resolveZoneOffsetMinutes(zone, year, month, day, hour, minute, second)
     } else {
       fail(zoneStart, `unrecognized time zone "${wordMatch[0]}" (known: ${KNOWN_ZONE_ABBREVIATIONS.join(', ')})`)
     }
@@ -266,14 +298,14 @@ function parseLine(rawLine: string, lineNumber: number): NormalizedEntry {
  * collected as errors rather than aborting the whole block, so one typo
  * doesn't hide the rest.
  */
-export function normalizeTimezoneText(input: string): NormalizeResult {
+export function normalizeTimezoneText(input: string, options: NormalizeOptions = {}): NormalizeResult {
   const entries: NormalizedEntry[] = []
   const errors: TimezoneFormatError[] = []
 
   input.split('\n').forEach((rawLine, index) => {
     if (rawLine.trim().length === 0) return
     try {
-      entries.push(parseLine(rawLine, index + 1))
+      entries.push(parseLine(rawLine, index + 1, options))
     } catch (err) {
       if (err instanceof TimezoneFormatError) {
         errors.push(err)
